@@ -1,6 +1,10 @@
 "use server";
 
 import { z } from "zod";
+import { put } from "@vercel/blob";
+import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 const UploadSchema = z.object({
   title: z.string().min(1),
@@ -19,4 +23,22 @@ export const uploadImage = async (prevState: any, formData: FormData) => {
       error: validatedFields.error.flatten().fieldErrors,
     };
   }
+
+  const { title, image } = validatedFields.data;
+
+  const { url } = await put(image.name, image, { access: "public", multipart: true });
+
+  try {
+    await prisma.upload.create({
+      data: {
+        title,
+        image: url,
+      },
+    });
+  } catch (error) {
+    return { message: "Failed to upload image" };
+  }
+
+  revalidatePath("/");
+  redirect("/");
 };
