@@ -16,6 +16,15 @@ const UploadSchema = z.object({
     .refine((file) => file.size < 1024 * 1024 * 5, { message: "image must be less than 5MB" }),
 });
 
+const EditSchema = z.object({
+  title: z.string().min(1),
+  image: z
+    .instanceof(File)
+    .refine((file) => file.size === 0 || file.type.startsWith("image/"), { message: "image must be an image" })
+    .refine((file) => file.size < 1024 * 1024 * 5, { message: "image must be less than 5MB" })
+    .optional(),
+});
+
 export const uploadImage = async (prevState: any, formData: FormData) => {
   const validatedFields = UploadSchema.safeParse(Object.fromEntries(formData.entries()));
 
@@ -38,6 +47,46 @@ export const uploadImage = async (prevState: any, formData: FormData) => {
     });
   } catch (error) {
     return { message: "Failed to upload image" };
+  }
+
+  revalidatePath("/");
+  redirect("/");
+};
+
+export const updateImage = async (id: string, prevState: any, formData: FormData) => {
+  const validatedFields = EditSchema.safeParse(Object.fromEntries(formData.entries()));
+
+  if (!validatedFields.success) {
+    return {
+      error: validatedFields.error.flatten().fieldErrors,
+    };
+  }
+
+  const data = await getImagesById(id);
+  if (!data) return { message: "No data found" };
+
+  const { title, image } = validatedFields.data;
+  let imagePath;
+  if (!image || image.size <= 0) {
+    imagePath = data.image;
+  } else {
+    await del(data.image);
+    const { url } = await put(image.name, image, { access: "public", multipart: true });
+    imagePath = url;
+  }
+
+  try {
+    await prisma.upload.update({
+      data: {
+        title,
+        image: imagePath,
+      },
+      where: {
+        id: id,
+      },
+    });
+  } catch (error) {
+    return { message: "Failed to update data" };
   }
 
   revalidatePath("/");
